@@ -7,8 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.database.ContentObserver
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -16,11 +14,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
-import org.tensorflow.lite.Interpreter
-import java.io.FileInputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.channels.FileChannel
 import java.util.concurrent.Executors
 
 class ImageMonitorService : Service() {
@@ -28,9 +21,8 @@ class ImageMonitorService : Service() {
     private lateinit var contentObserver: ContentObserver
     private val detectedImages = ArrayList<Uri>()
     private var lastImageId: Long = -1
-    private var tflite: Interpreter? = null
+    private var analyzer: ImageAnalyzer? = null
     private val executor = Executors.newSingleThreadExecutor()
-    private val IMG_SIZE = 512
 
     override fun onCreate() {
         super.onCreate()
@@ -39,24 +31,9 @@ class ImageMonitorService : Service() {
         startForeground(1, notification)
         
         lastImageId = getLatestImageId()
-        
-        // Load TFLite model
-        try {
-            tflite = Interpreter(loadModelFile())
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        analyzer = ImageAnalyzer(this)
 
         registerImageObserver()
-    }
-
-    private fun loadModelFile(): ByteBuffer {
-        val fileDescriptor = assets.openFd("final.tflite")
-        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = fileDescriptor.startOffset
-        val declaredLength = fileDescriptor.declaredLength
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
 
     private fun registerImageObserver() {
@@ -74,7 +51,7 @@ class ImageMonitorService : Service() {
                     
                     // Run analysis in background
                     executor.execute {
-                        if (analyzeImage(imageUri)) {
+                        if (analyzer?.analyzeImage(imageUri) == true) {
                             Handler(Looper.getMainLooper()).post {
                                 detectedImages.add(imageUri)
                                 updateSummaryNotification()
@@ -90,58 +67,6 @@ class ImageMonitorService : Service() {
             true,
             contentObserver
         )
-    }
-
-    private fun analyzeImage(uri: Uri): Boolean {
-        return try {
-            val bitmap = contentResolver.openInputStream(uri)?.use { 
-                BitmapFactory.decodeStream(it) 
-            } ?: return false
-
-            val processedBitmap = preprocess(bitmap)
-            val inputBuffer = convertBitmapToByteBuffer(processedBitmap)
-            val output = Array(1) { FloatArray(1) }
-            
-            tflite?.run(inputBuffer, output)
-            
-            val score = output[0][0]
-            
-            score >= 0.5f
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
-    private fun preprocess(im: Bitmap): Bitmap {
-        var w = im.width
-        var h = im.height
-        val scale = IMG_SIZE.toFloat() / minOf(w, h)
-        w = (w * scale).toInt()
-        h = (h * scale).toInt()
-
-        val scaled = Bitmap.createScaledBitmap(im, w, h, true)
-        val l = (w - IMG_SIZE) / 2
-        val t = (h - IMG_SIZE) / 2
-
-        return Bitmap.createBitmap(scaled, l, t, IMG_SIZE, IMG_SIZE)
-    }
-
-    private fun convertBitmapToByteBuffer(bitmap: Bitmap): ByteBuffer {
-        val byteBuffer = ByteBuffer.allocateDirect(4 * IMG_SIZE * IMG_SIZE * 3)
-        byteBuffer.order(ByteOrder.nativeOrder())
-        val intValues = IntArray(IMG_SIZE * IMG_SIZE)
-        bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-        var pixel = 0
-        for (i in 0 until IMG_SIZE) {
-            for (j in 0 until IMG_SIZE) {
-                val value = intValues[pixel++]
-                byteBuffer.putFloat(((value shr 16 and 0xFF) / 255.0f))
-                byteBuffer.putFloat(((value shr 8 and 0xFF) / 255.0f))
-                byteBuffer.putFloat(((value and 0xFF) / 255.0f))
-            }
-        }
-        return byteBuffer
     }
 
     private fun getLatestImageId(): Long {
@@ -209,7 +134,7 @@ class ImageMonitorService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         contentResolver.unregisterContentObserver(contentObserver)
-        tflite?.close()
+        analyzer?.close()
         executor.shutdown()
     }
 
