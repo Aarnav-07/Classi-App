@@ -5,8 +5,11 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +22,8 @@ import androidx.core.view.WindowInsetsCompat
 class MainActivity : AppCompatActivity() {
 
     private lateinit var serviceToggle: SwitchCompat
+    private lateinit var folderText: TextView
+    private lateinit var selectFolderButton: Button
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -33,6 +38,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val folderPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        uri?.let {
+            // Persist access to this folder
+            contentResolver.takePersistableUriPermission(
+                it,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            saveSelectedFolder(it.toString())
+            updateFolderUI(it.toString())
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -44,8 +63,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         serviceToggle = findViewById(R.id.service_toggle)
+        folderText = findViewById(R.id.selected_folder_text)
+        selectFolderButton = findViewById(R.id.select_folder_button)
 
-        // Set initial state based on whether service is already running
+        // Load saved folder
+        val savedFolder = getSavedFolder()
+        updateFolderUI(savedFolder)
+
         serviceToggle.isChecked = isServiceRunning(ImageMonitorService::class.java)
 
         serviceToggle.setOnCheckedChangeListener { _, isChecked ->
@@ -55,6 +79,29 @@ class MainActivity : AppCompatActivity() {
                 stopMonitoringService()
             }
         }
+
+        selectFolderButton.setOnClickListener {
+            folderPickerLauncher.launch(null)
+        }
+    }
+
+    private fun updateFolderUI(uriString: String?) {
+        if (uriString != null) {
+            val uri = Uri.parse(uriString)
+            folderText.text = "Destination: ${uri.path}"
+        } else {
+            folderText.text = "No folder selected"
+        }
+    }
+
+    private fun saveSelectedFolder(uriString: String) {
+        val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("destination_folder", uriString).apply()
+    }
+
+    private fun getSavedFolder(): String? {
+        val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        return prefs.getString("destination_folder", null)
     }
 
     private fun checkPermissionsAndStartService() {
@@ -94,7 +141,6 @@ class MainActivity : AppCompatActivity() {
         stopService(intent)
     }
 
-    // Helper to check if the service is already running
     private fun isServiceRunning(serviceClass: Class<*>): Boolean {
         val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         for (service in manager.getRunningServices(Int.MAX_VALUE)) {
