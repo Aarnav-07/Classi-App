@@ -4,14 +4,12 @@ plugins {
 
 android {
     namespace = "com.example.classi_backend"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.classi_backend"
-        minSdk = 36
-        targetSdk = 36
+        minSdk = 26
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -39,6 +37,10 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
+    
+    // Updated to 2.16.1 to resolve namespace collision with tensorflow-lite-api
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

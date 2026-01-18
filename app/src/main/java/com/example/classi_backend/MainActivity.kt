@@ -16,6 +16,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
@@ -42,13 +44,13 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
         uri?.let {
-            // Persist access to this folder
             contentResolver.takePersistableUriPermission(
                 it,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             saveSelectedFolder(it.toString())
             updateFolderUI(it.toString())
+            serviceToggle.isEnabled = true
         }
     }
 
@@ -66,9 +68,13 @@ class MainActivity : AppCompatActivity() {
         folderText = findViewById(R.id.selected_folder_text)
         selectFolderButton = findViewById(R.id.select_folder_button)
 
-        // Load saved folder
         val savedFolder = getSavedFolder()
         updateFolderUI(savedFolder)
+
+        serviceToggle.isEnabled = savedFolder != null
+        if (savedFolder == null) {
+            Toast.makeText(this, "Please select a destination folder first", Toast.LENGTH_LONG).show()
+        }
 
         serviceToggle.isChecked = isServiceRunning(ImageMonitorService::class.java)
 
@@ -86,22 +92,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateFolderUI(uriString: String?) {
-        if (uriString != null) {
-            val uri = Uri.parse(uriString)
-            folderText.text = "Destination: ${uri.path}"
+        folderText.text = if (uriString != null) {
+            val uri = uriString.toUri()
+            "Destination: ${uri.path}"
         } else {
-            folderText.text = "No folder selected"
+            "No folder selected"
         }
     }
 
     private fun saveSelectedFolder(uriString: String) {
-        val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("destination_folder", uriString).apply()
+        getSharedPreferences("AppPrefs", Context.MODE_PRIVATE).edit {
+            putString("destination_folder", uriString)
+        }
     }
 
     private fun getSavedFolder(): String? {
-        val prefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-        return prefs.getString("destination_folder", null)
+        return getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            .getString("destination_folder", null)
     }
 
     private fun checkPermissionsAndStartService() {
@@ -129,11 +136,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startMonitoringService() {
         val intent = Intent(this, ImageMonitorService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
+        startForegroundService(intent)
     }
 
     private fun stopMonitoringService() {
@@ -143,6 +146,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun isServiceRunning(serviceClass: Class<*>): Boolean {
         val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        @Suppress("DEPRECATION")
         for (service in manager.getRunningServices(Int.MAX_VALUE)) {
             if (serviceClass.name == service.service.className) {
                 return true
