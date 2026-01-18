@@ -12,7 +12,7 @@ import java.nio.channels.FileChannel
 
 class ImageAnalyzer(private val context: Context) {
     private var tflite: Interpreter? = null
-    private val IMG_SIZE = 512
+    private val IMG_SIZE = 224
 
     init {
         try {
@@ -45,7 +45,7 @@ class ImageAnalyzer(private val context: Context) {
 
             val score = output[0][0]
 
-            score >= 0.5f
+            score <= 0.5f
         } catch (e: Exception) {
             e.printStackTrace()
             false
