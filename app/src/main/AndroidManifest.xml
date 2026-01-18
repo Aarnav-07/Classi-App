@@ -18,6 +18,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ClassiBackend">
 
+        <receiver android:name=".NotificationDeleteReceiver" android:exported="false" />
+
         <service
             android:name=".ImageMonitorService"
             android:enabled="true"
@@ -33,6 +35,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".GalleryActivity"
+            android:label="Detected Images"
+            android:exported="false" />
+
     </application>
 
 </manifest>
